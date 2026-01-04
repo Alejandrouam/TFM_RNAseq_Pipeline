@@ -7,7 +7,7 @@ El presente repositorio recoge el conjunto de scripts que componen el pipeline d
 
 ## Orden del flujo de trabajo
 - A. Control de calidad
-  - 1. `1_qc`
+  -  1. `1_qc`
   - 2. 2_export_qc
   - 3. 3_check_adapters
 - B. Alineamiento al genoma de referencia  
