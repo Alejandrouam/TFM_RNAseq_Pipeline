@@ -6,25 +6,25 @@ El presente repositorio recoge el conjunto de scripts que componen el pipeline d
 - Contenido de el Trabajo Fin de Máster: Etapas C, E, F, G y H
 
 ## Orden del flujo de trabajo
-- 1. Control de calidad
-  -  1. `1_qc`
+- A. Control de calidad
+  - 1. `1_qc`
   - 2. `2_export_qc`
   - 3. `3_check_adapters`
-- 2. Alineamiento al genoma de referencia  
+- B. Alineamiento al genoma de referencia  
   - 4. `4_mapping`  
   - 5. `5_export_mapping`  
-- 3. Cuantificación de la expresión  
+- C. Cuantificación de la expresión  
   - 6. `6_fix_gtf`  
   - 7. `7_quantification`  
   - 8. `8_quantification_postprocessing.R`  
   - 9. `9_fpkm_tpm.R`  
-- 4. Ensamblaje de transcritos  
+- D. Ensamblaje de transcritos  
   - 10. `10_assembly`  
-- 5. Análisis de expresión diferencial  
+- E. Análisis de expresión diferencial  
   - 11. `11_de.R`  
-- 6. Análisis de enriquecimiento GO/KEGG  
+- F. Análisis de enriquecimiento GO/KEGG  
   - 12. `12_enrichment.R`  
-- 7. Análisis GSEA  
+- G. Análisis GSEA  
   - 13. `13_gsea.R`  
-- 8. Análisis de interacciones proteína-proteína  
+- H. Análisis de interacciones proteína-proteína  
   - 14. `14_ppi.R`  
