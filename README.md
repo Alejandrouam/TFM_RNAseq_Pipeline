@@ -6,14 +6,14 @@ El presente repositorio recoge el conjunto de scripts que componen el pipeline d
 - Contenido de el Trabajo Fin de Máster: Etapas C,E,F,G,H
 
 ## Orden del flujo de trabajo
-- A. Control de calidad
+- A. Control de calidad  
   1. 1_qc
   2. 2_export_qc
-  3. 3_check_adapters  
-- B. Alineamiento al genoma de referencia
+  3. 3_check_adapters
+- B. Alineamiento al genoma de referencia  
   4. 4_mapping
-  5. 5_export_mapping  
-- C. Cuantificación de la expresión
+  5. 5_export_mapping
+- C. Cuantificación de la expresión  
   6. 6_fix_gtf
   7. 7_quantification
   8. 8_quantification_postprocessing.R
