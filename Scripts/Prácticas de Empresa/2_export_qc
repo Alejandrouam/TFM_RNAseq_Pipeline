@@ -1,0 +1,82 @@
+#!/bin/bash
+
+## 1. Configuraciones previas
+
+# Inicializar temporizador de tiempo de ejecución
+start=$(date +%s)
+
+# Establecer directorio de entrada
+INPUT_DIR=$1
+
+# Crear directorio de salida
+CSV="excel_qc/old_fastp_summary.csv"
+CSV2="excel_qc/fastp_summary.csv"
+mkdir -p "excel_qc"
+
+# Crear encabezado de la tabla
+echo "sample,raw_reads,raw_bases,clean_reads,clean_bases,error_rate,Q20,Q30,GC_pct" > "$CSV"
+
+## 2. Iterar sobre cada muestra para extraer información sobre el control de calidad realizado
+
+for json in "$INPUT_DIR"/*.json
+do
+	sample=$(basename "$json" .json | sed 's/json_//')
+	sample_name=$(esearch -db sra -query $sample | efetch -format runinfo | awk -F, 'NR==2{print $30}')
+
+	# Usar jq para extraer información de los archivos json generados por fastp
+	before_reads=$(jq '.summary.before_filtering.total_reads' "$json")
+	after_reads=$(jq '.summary.after_filtering.total_reads' "$json")
+	before_bases=$(jq '.summary.before_filtering.total_bases' "$json")
+	after_bases=$(jq '.summary.after_filtering.total_bases' "$json")
+	Q20_after=$(jq '.summary.after_filtering.q20_bases' "$json")
+	Q30_after=$(jq '.summary.after_filtering.q30_bases' "$json")
+	GC_after=$(jq '.summary.after_filtering.gc_content' "$json")
+	mean_quality_r1=$(jq -r '.read1_after_filtering.quality_curves.mean[]' "$json")
+	mean_quality_r2=$(jq -r '.read2_after_filtering.quality_curves.mean[]' "$json")
+
+	# Calcular porcentaje de bases con calidad Q20 y Q30
+	Q20_after=$(awk -v Q="$Q20_after" -v bases="$after_bases" 'BEGIN {printf "%.2f", (Q/bases)*100}')
+	Q30_after=$(awk -v Q="$Q30_after" -v bases="$after_bases" 'BEGIN {printf "%.2f", (Q/bases)*100}')
+
+	# Convertir las lecturas y las bases a las unidades correspondientes (millones y miles de millones)
+	before_reads=$(echo $before_reads | awk '{printf "%.6f M", $1/1000000}')
+	after_reads=$(echo $after_reads | awk '{printf "%.6f M", $1/1000000}')
+	before_bases=$(echo $before_bases | awk '{printf "%.9f G", $1/1000000000}')
+	after_bases=$(echo $after_bases | awk '{printf "%.9f G", $1/1000000000}')
+
+	# Calcular el porcentaje de contenido GC
+	GC_after=$(echo $GC_after | awk '{printf "%.2f", $1*100}')
+
+	# Iterar sobre la calidad de cada base y calcular la tasa de error media global
+	arr1=($mean_quality_r1)
+	arr2=($mean_quality_r2)
+
+	total_err_r1=0
+	total_err_r2=0
+
+	for i in "${!arr1[@]}"; do
+		value1=${arr1[$i]}
+    		value2=${arr2[$i]}
+
+    		err1=$(python3 -c "print(10**(-$value1/10))")
+    		total_err_r1=$(echo "scale=6; $total_err_r1 + $err1" | bc -l)
+
+		err2=$(python3 -c "print(10**(-$value2/10))")
+    		total_err_r2=$(echo "scale=6; $total_err_r2 + $err2" | bc -l)
+	done
+	bases_per_read=$(echo "$mean_quality_r1" | wc -l)
+	sample_err=$(awk -v t_err1="$total_err_r1" -v t_err2="$total_err_r2" -v bases="$bases_per_read" 'BEGIN {printf "%.2f", ((t_err1+t_err2)/bases)*100}')
+
+	# Plasmar todas las variables calculadas en la tabla final
+	echo "$sample_name ($sample),$before_reads,$before_bases,$after_reads,$after_bases,$sample_err,$Q20_after,$Q30_after,$GC_after" >> "$CSV"
+done
+
+## 3. Ajustes finales
+
+# Cambiar separador
+sed 's/,/;/g' $CSV > $CSV2
+rm $CSV
+
+# Mostrar tiempo de ejecución
+end=$(date +%s)
+echo "Time used: $(echo "scale=2; ($end - $start)/60" | bc) minutes"

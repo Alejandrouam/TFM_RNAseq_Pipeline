@@ -1,0 +1,52 @@
+#!/bin/bash
+
+## 1. Configuraciones previas
+
+# Inicializar temporizador de tiempo de ejecución
+start=$(date +%s)
+
+# Establecer directorio de entrada
+INPUT_DIR=$1 # Carpeta que contiene la salida de fastp
+
+# Crear archivos y carpeta de salida
+OUT_FILE="adapters_count/temp_count.csv"
+CSV="adapters_count/count.csv"
+mkdir -p "adapters_count"
+
+# Elegir adaptadores a buscar
+P5_r1="AATGATACGGCGACCACCGAGA"
+P5_r2=$(echo "TTACTATGCCGCTGGTGGCTCT" | rev)
+P7_r1="CGTATGCCGTCTTCTGCTTG"
+P7_r2=$(echo "GCATACGGCAGAAGACGAAC" | rev)
+
+# Crear encabezado de la tabla
+echo "Sample, P5_count, P7_count" > $OUT_FILE
+
+## 2. Búsqueda de adaptadores en las lecturas procesadas
+
+# Detectar cada instancia de adaptador y enviar a la tabla final
+for R1 in "$INPUT_DIR"/*_1.fastq.gz
+do
+	sample=$(basename $R1 _1.fastq.gz)
+	count_P5_1=$(zgrep -c $P5_r1 $R1)
+	count_P7_1=$(zgrep -c $P7_r1 $R1)
+	echo "${sample}_1, $count_P5_1, $count_P7_1" >> $OUT_FILE
+
+	R2="$INPUT_DIR"/${sample}_2.fastq.gz
+	count_P5_2=$(zgrep -c $P5_r2 $R2)
+	count_P7_2=$(zgrep -c $P7_r2 $R2)
+	echo "${sample}_2, $count_P5_2, $count_P7_2" >> $OUT_FILE
+done
+
+## 3. Ajustes finales
+
+# Cambiar separador
+sed 's/,/;/g' $OUT_FILE > $CSV
+rm $OUT_FILE
+
+# Mensaje de salida
+echo "Archivo csv generado: $CSV"
+
+# Mostrar tiempo de ejecución
+end=$(date +%s)
+echo "Time used: $(echo "scale=2; ($end - $start)/60" | bc) minutes"

@@ -1,0 +1,175 @@
+#!/bin/bash
+
+## 1. Configuraciones previas
+
+# Inicializar temporizador de tiempo de ejecución
+start=$(date +%s)
+
+# Esteblecer directorios de entrada
+INPUT_DIR=$1 # Carpeta con los archivos BAM de lecturas alineadas y ordenadas
+GTF_FILE=$2 # Anotación en formato GTF modificada por el script fix_gtf
+
+# Crear directorio de salida
+OUTPUT_DIR="stringtie_out"
+mkdir -p $OUTPUT_DIR
+
+# Crear dos archivos vacíos: mergelist.txt y samplelist.txt
+> $OUTPUT_DIR/mergelist.txt
+> $OUTPUT_DIR/samplelist.txt
+
+## 2. 1ª ejecución de stringtie
+
+for file in "$INPUT_DIR"/*sorted.bam
+do
+	# Extaer el nombre de muestra
+	sample=$(basename $file sorted.bam)
+
+	# Ejecutar stringtie con las lecturas alineadas y el GTF
+	stringtie $file -o $OUTPUT_DIR/$sample.gtf -p 14 -G $GTF_FILE -l $sample
+	echo "${sample} sample correctly assembled"
+
+	# Crear un archivo TXT con el directorio de cada archivo GTF generado
+	echo "$OUTPUT_DIR/$sample.gtf" >> $OUTPUT_DIR/mergelist.txt
+done
+
+## 3. 2ª ejecución de stringtie (--merge)
+
+# Ejecutar stringtie --merge para generar un conjunto no redundante de transcritos
+stringtie --merge -p 14 -G $GTF_FILE -o $OUTPUT_DIR/stringtie_merged.gtf $OUTPUT_DIR/mergelist.txt
+echo "stringtie_merged.gtf generated"
+
+## 4. 3ª ejecución de stringtie
+
+for file in "$INPUT_DIR"/*sorted.bam
+do
+	# Extraer nombre de muestra
+        sample=$(basename $file sorted.bam)
+
+	# Ejecutar stringtie con los GTF generados
+        stringtie $file -o $OUTPUT_DIR/${sample}_merged.gtf -p 14 -G $OUTPUT_DIR/stringtie_merged.gtf -e -B -l $sample
+        echo "${sample}_merged sample correctly assembled"
+
+	# Crear TXT con el directorio de cada merged.gtf
+	echo -e "$sample\t$OUTPUT_DIR/${sample}_merged.gtf" >> $OUTPUT_DIR/samplelist.txt
+done
+
+## 5. Ejecución de prepDE.py para generar las matrices de resultados
+
+python prepDE.py -i $OUTPUT_DIR/samplelist.txt
+mv gene_count_matrix.csv transcript_count_matrix.csv $OUTPUT_DIR
+
+## 6. Cambio del nombre de las muestras por su código alfanumérico unido a su ID de SRA entre paréntesis
+
+# Extraer nombres de muestra actuales
+samples=$(head -1 $OUTPUT_DIR/gene_count_matrix.csv | awk -F',' '{for (i=2; i<=NF; i++) {gsub(/\r/, "", $i); printf "%s%s", $i, (i==NF?"\n":"\t")}}')
+
+# Utilizar esearch para obtener los nuevos nombres de muestra
+sample_names=""
+for sample in $samples
+do
+        sample_name=$(esearch -db sra -query $sample | efetch -format runinfo | awk -F, 'NR==2{print $30}')
+        sample_names="${sample_names}${sample_name} ($sample),"
+done
+
+sample_names=${sample_names::-1}
+
+# Plasmar los nuevos nombres de muestra en la matriz de conteos de genes
+echo -e "gene_id,${sample_names}" > $OUTPUT_DIR/formatted_gene_count_matrix.csv
+tail -n +2 $OUTPUT_DIR/gene_count_matrix.csv >> $OUTPUT_DIR/formatted_gene_count_matrix.csv
+
+## 7. Extraer las anotaciones génicas de los resultados obtenidos con featurecounts en la cuantificación
+
+# Extraer información de la tabla generada en la cuantificación
+ssconvert featurecounts_out/gene_counts_entrez.xlsx $OUTPUT_DIR/tmp.csv
+ncols=$(head -n1 $OUTPUT_DIR/tmp.csv | awk -F',' '{print NF}')
+start_col=$((ncols-7))
+cut -d',' -f1,2,"$start_col"-"$ncols" $OUTPUT_DIR/tmp.csv > $OUTPUT_DIR/tmp.txt
+
+## 8. Formatear la matriz de conteos de genes para descartar todos los genes descubiertos de novo y añadir anotaciones génicas
+
+# Crear encabezado
+head -n1 "$OUTPUT_DIR/formatted_gene_count_matrix.csv" > "$OUTPUT_DIR/st.csv"
+
+# Si la columna 1 contiene '|', cambiarla por únicamente lo que venga antes de '|' (el Entrez ID del gen o el ID de novo)
+awk -F',' 'NR>1 && $1 ~ /\|/ {
+    split($1, a, "|")
+    $1 = a[1]
+    out = $1
+    for (i = 2; i <= NF; i++) {
+        out = out "," $i
+    }
+    print out
+}' "$OUTPUT_DIR/formatted_gene_count_matrix.csv" >> "$OUTPUT_DIR/st.csv"
+
+# Descartar todos los genes de novo
+awk -F',' '$1 !~ /^MSTRG/' "$OUTPUT_DIR/st.csv" > "$OUTPUT_DIR/st_noted.csv"
+
+# Ordenar por gene_id la matriz de conteos de genes y los resultados de la cuantificación que contienen las anotaciones génicas
+tail -n +2 "$OUTPUT_DIR/tmp.txt" | sort -t',' -k2,2 > "$OUTPUT_DIR/tmp_sorted.csv"
+tail -n +2 "$OUTPUT_DIR/st_noted.csv" | sort -t',' -k1,1 > "$OUTPUT_DIR/st_sorted.csv"
+
+# Preparar el archivo que combinará los resultados de stringtie con las anotaciones génicas
+head1=$(head -n1 "$OUTPUT_DIR/tmp.txt" | cut -d',' --complement -f1,2)
+head2=$(head -n1 "$OUTPUT_DIR/st.csv" | cut -d',' -f2-)
+echo "gene_id,gene_ens,${head1},${head2}" > "$OUTPUT_DIR/merged.csv"
+
+# Combinar archivos
+join -t ',' -1 2 -2 1 "$OUTPUT_DIR/tmp_sorted.csv" "$OUTPUT_DIR/st_sorted.csv" >> "$OUTPUT_DIR/merged.csv"
+
+# Ordenar columnas según la estructura deseada
+tr -d '\r' < "$OUTPUT_DIR/merged.csv" > "$OUTPUT_DIR/merged_nocr.csv"
+awk -F',' 'BEGIN{OFS=","} {out = $2; for (i=11; i<=NF; i++) {out = out OFS $i}; out = out OFS $3 OFS $4 OFS $5 OFS $6 OFS $7 OFS $8 OFS $9 OFS $10; print out}' "$OUTPUT_DIR/merged_nocr.csv" > "$OUTPUT_DIR/sorted_merged.csv"
+
+# Guardar el encabezado en una variable para no tenerlo en cuenta en el ordenamiento del siguiente paso
+header="gene_id,$(head -n1 "$OUTPUT_DIR/sorted_merged.csv" | cut -d',' -f2-)"
+
+## 9. Ordenar según el nivel de expresión medio del gen
+
+# Añadir nueva columna con el nivel de expresión medio
+awk -F',' 'BEGIN{OFS=","}
+NR==1 {
+    # Se seleccionan las columnas que contengan "SRR" en su encabezado
+    for (i=1; i<=NF; i++) {
+        if ($i ~ /SRR/) srcols[++n] = i
+    }
+    # Se elige el nombre de la nueva columna
+    print $0,"mean_SRR"
+    next
+}
+{
+    # Se calcula el nivel de expresión medio utilizando las columnas seleccionadas y se plasma en la nueva columna
+    sum = 0
+    for (j=1; j<=n; j++) {
+        col = srcols[j]
+        sum += $col
+    }
+    mean = (n>0 ? sum/n : 0)
+    print $0, mean
+}' "$OUTPUT_DIR/sorted_merged.csv" > "$OUTPUT_DIR/sorted_merged_with_mean.csv"
+
+# Ordenar archivo por el nivel de expresión medio contenido en la nueva columna
+lastcol=$(head -1 "$OUTPUT_DIR/sorted_merged_with_mean.csv" | awk -F',' '{print NF}')
+{
+    head -1 "$OUTPUT_DIR/sorted_merged_with_mean.csv"
+    tail -n +2 "$OUTPUT_DIR/sorted_merged_with_mean.csv" | sort -t',' -k${lastcol},${lastcol}nr
+} > "$OUTPUT_DIR/sorted_merged_mean_sorted.csv"
+
+# Eliminar la nueva columna y añadir el encabezado previamente guardado en una variable
+echo -e "${header}" > "$OUTPUT_DIR/sorted_merged_nomean.csv"
+tail -n +2 "$OUTPUT_DIR/sorted_merged_mean_sorted.csv" | awk -F',' -v OFS=',' '{NF--; print}' >> "$OUTPUT_DIR/sorted_merged_nomean.csv"
+
+## 10. Filtrado de genes que no tienen correspondencia con Ensembl ID
+
+awk -F',' '!(NR>1 && $1 == "")' "$OUTPUT_DIR/sorted_merged_nomean.csv" > "$OUTPUT_DIR/sorted_merged_final.csv"
+
+## 11. Ajustes finales
+
+# Cambiar separador
+sed 's/,/;/g' $OUTPUT_DIR/sorted_merged_final.csv > $OUTPUT_DIR/gene_count_matrix_final.csv
+
+# Mensaje de salida
+echo "gene_count_matrix_final.csv correctly generated"
+
+# Mostrar tiempo de ejecución
+end=$(date +%s)
+echo "Time used: $(echo "scale=2; ($end - $start)/60" | bc) minutes"

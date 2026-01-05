@@ -1,0 +1,58 @@
+#!/bin/bash
+
+## 1. Configuraciones previas
+
+# Inicializar temporizador de tiempo de ejecución
+start=$(date +%s)
+
+# Establecer archivos de entrada
+INPUT_DIR=$1 # Carpeta con los archivos BAM de lecturas alineadas y ordenadas
+GTF_FILE=$2 # Anotación en formato GTF modificada por el script fix_gtf
+
+# Crear directorio de salida
+OUTPUT_DIR="featurecounts_out"
+mkdir -p $OUTPUT_DIR
+
+## 2. Ejecución de featureCounts
+
+# Ejecutar featureCounts con 14 hilos, para librería no dirigida
+featureCounts -T 14 \
+  -p -t gene -s 0 -g gene_id \
+  --extraAttributes gene,gene_biotype \
+  -a $GTF_FILE \
+  -o $OUTPUT_DIR/gene_counts.txt \
+  $INPUT_DIR/*sorted.bam
+echo "Feature counts correctly executed"
+
+## 3. Cambio del nombre de las muestras por su código alfanumérico unido a su ID de SRA entre paréntesis
+
+# Extraer nombres de muestra actuales
+samples=$(tail +2 $OUTPUT_DIR/gene_counts.txt | head -1 | awk '{for (i=9; i<=NF; i++) {gsub("aligned_reads//", "", $i); gsub("sorted.bam", "", $i); printf "%s%s", $i, (i==NF?"\n":"\t")}}')
+
+# Utilizar esearch para obtener los nuevos nombres de muestra
+sample_names=""
+for sample in $samples
+do
+	sample_name=$(esearch -db sra -query $sample | efetch -format runinfo | awk -F, 'NR==2{print $30}')
+	sample_names="${sample_names}${sample_name} ($sample)\t"
+done
+
+# Plasmar los nuevos nombres de muestra en la matriz de conteos de genes
+echo -e "gene_id\t${sample_names}gene_name\tgene_chr\tgene_start\tgene_end\tgene_strand\tgene_length\tgene_biotype" > $OUTPUT_DIR/new_gene_counts.txt
+tail +3 $OUTPUT_DIR/gene_counts.txt | awk -F'\t' '{printf "%s\t", $1; for (i=9; i<=NF; i++) printf "%s\t", $i; printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $7,$2,$3,$4,$5,$6,$8}' >> $OUTPUT_DIR/new_gene_counts.txt
+
+## 4. Ajustes finales
+
+# Cambiar separador y eliminar archivos intermedios
+sed 's/;/,/g' $OUTPUT_DIR/new_gene_counts.txt > $OUTPUT_DIR/corrected_gene_counts.txt
+sed 's/\t/;/g' $OUTPUT_DIR/corrected_gene_counts.txt > $OUTPUT_DIR/gene_counts.csv
+rm $OUTPUT_DIR/gene_counts.txt
+rm $OUTPUT_DIR/new_gene_counts.txt
+rm $OUTPUT_DIR/corrected_gene_counts.txt
+
+# Mostrar mensaje de salida
+echo "gene_counts.csv correctly generated"
+
+# Mostrar tiempo de ejecución
+end=$(date +%s)
+echo "Time used: $(echo "scale=2; ($end - $start)/60" | bc) minutes"

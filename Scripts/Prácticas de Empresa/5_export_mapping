@@ -1,0 +1,65 @@
+#!/bin/bash
+
+## 1. Configuraciones previas
+
+# Inicializar temporizador de tiempo de ejecución
+start=$(date +%s)
+
+# Establecer directorio de entrada
+INPUT_DIR=$1 # Carpeta con las lecturas alineadas y ordenadas en formato BAM
+
+# Crear archivos y carpeta de salida
+CSV="mapping_excel/old_mapping_summary.csv"
+CSV2="mapping_excel/mapping_summary.csv"
+mkdir -p "mapping_excel"
+
+# Crear encabezado de la tabla
+echo "sample,total_reads,total_map,unique_map,multi_map,read1_map,read2_map,positive_map,negative_map,splice_map,unsplice_map,proper_map" > $CSV
+
+## 2. Extraer información de los BAM para crear tabla resumen del alineamiento realizado
+
+# Extraer información de cada muestra BAM usando samtools
+for file in "$INPUT_DIR"/*sorted.bam
+do
+	sample=$(basename "$file" sorted.bam)
+	sample_name=$(esearch -db sra -query $sample | efetch -format runinfo | awk -F, 'NR==2{print $30}')
+	total_reads=$(samtools view -c -F 256 $file)
+	total_map=$(samtools view -c -F 4 -F 256 $file)
+	unique_map=$(samtools view -c -q 1 -F 256 $file)
+	multi_map=$(( $(samtools view -c -F 4 -F 256 $file) - $(samtools view -c -q 1 -F 256 $file) ))
+	read1_map=$(samtools view -c -f 64 -F 256 $file)
+	read2_map=$(samtools view -c -f 128 -F 256 $file)
+	positive_map=$(samtools view -c -F 16 -F 256 $file)
+	negative_map=$(samtools view -c -f 16 -F 256 $file)
+	splice_map=$(samtools view -F 256 $file | awk '$6 ~ /N/ {c++} END{print c}')
+	unsplice_map=$(samtools view -F 256 $file | awk '$6 !~ /N/ {c++} END{print c}')
+	proper_map=$(samtools view -c -f 2 -F 256 $file)
+
+	# Calcular en forma de porcentaje cada variable calculada
+	total_map_pct=$(awk -v map="$total_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (map/total)*100}')
+	unique_map_pct=$(awk -v uni="$unique_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (uni/total)*100}')
+	multi_map_pct=$(awk -v mult="$multi_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", ((mult/1000000)/total)*100}')
+        read1_map_pct=$(awk -v r1="$read1_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (r1/total)*100}')
+        read2_map_pct=$(awk -v r2="$read2_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (r2/total)*100}')
+        positive_map_pct=$(awk -v pos="$positive_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (pos/total)*100}')
+        negative_map_pct=$(awk -v neg="$negative_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (neg/total)*100}')
+        splice_map_pct=$(awk -v spl="$splice_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (spl/total)*100}')
+        unsplice_map_pct=$(awk -v uns="$unsplice_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (uns/total)*100}')
+        proper_map_pct=$(awk -v pro="$proper_map" -v total="$total_reads" 'BEGIN {printf "%.2f %", (pro/total)*100}')
+
+	# Plasmar resultados en la tabla final
+	echo "$sample_name ($sample),$total_reads,$total_map ($total_map_pct),$unique_map ($unique_map_pct),$multi_map ($multi_map_pct),$read1_map ($read1_map_pct),$read2_map ($read2_map_pct),$positive_map ($positive_map_pct),$negative_map ($negative_map_pct),$splice_map ($splice_map_pct),$unsplice_map ($unsplice_map_pct),$proper_map ($proper_map_pct)" >> $CSV
+done
+
+## 3. Ajustes finales
+
+# Cambiar separador
+sed 's/,/;/g' $CSV > $CSV2
+rm $CSV
+
+# Mensaje de salida
+echo "Archivo csv generado: $CSV2"
+
+# Mostrar tiempo de ejecución
+end=$(date +%s)
+echo "Time used: $(echo "scale=2; ($end - $start)/60" | bc) minutes"

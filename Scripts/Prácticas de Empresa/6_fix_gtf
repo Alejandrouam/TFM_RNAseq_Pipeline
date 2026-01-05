@@ -1,0 +1,30 @@
+#!/bin/bash
+
+## 1. Configuraciones previas
+
+# Establecer GTF de entrada
+GTF=$1
+
+# Establecer directorio de salida
+OUTPUT_DIR="reference"
+
+## 2. Modificación del GTF
+
+awk -F'\t' 'BEGIN{OFS="\t"}
+{   # Saltarse el encabezado
+    if ($0 ~ /^#/ || NF < 9) { print; next }
+    # Actuar sobre todos las entradas correspondientes a genes, no a exones
+    if ($3 == "gene") {
+        # Eliminar todos los campos de transcript_id vacíos
+        gsub(/;[[:space:]]*transcript_id[[:space:]]*"";?/, ";", $9)
+        gsub(/;;+/, ";", $9)
+    }
+    # Actuando sobre todas las entradas, extraer GeneID:XXXX del noveno campo y guardarlo en la variale real_id
+    real_id = ""
+    if (match($9, /GeneID:([^"]+)/, a)) {
+        real_id = a[1]
+	# Sustituir el símbolo de gen contenido en el campo gene_id por el contenido de real_id
+        gsub(/gene_id "[^"]*"/, "gene_id \"" real_id "\"", $9)
+    }
+    print
+}' "$GTF" > "$OUTPUT_DIR/genomic_filtered.gtf"
