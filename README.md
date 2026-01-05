@@ -3,7 +3,7 @@ El presente repositorio recoge el conjunto de scripts que componen el pipeline d
 
 ## Distribución de contenidos
 - Contenido de la asignatura Prácticas de Empresa: Etapas A, B y D
-- Contenido de el Trabajo Fin de Máster: Etapas C, E, F, G y H
+- Contenido del Trabajo Fin de Máster: Etapas C, E, F, G y H
 
 ## Orden del flujo de trabajo
 - A. Control de calidad
