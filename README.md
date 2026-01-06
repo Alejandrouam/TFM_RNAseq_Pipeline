@@ -7,17 +7,17 @@ El presente repositorio recoge el conjunto de scripts que componen el pipeline d
 
 ## Orden del flujo de trabajo
 - A. Control de calidad
-  - 1. `1_qc`
-  - 2. `2_export_qc`
-  - 3. `3_check_adapters`
+  - 1. `01_qc`
+  - 2. `02_export_qc`
+  - 3. `03_check_adapters`
 - B. Alineamiento al genoma de referencia  
-  - 4. `4_mapping`  
-  - 5. `5_export_mapping`  
+  - 4. `04_mapping`  
+  - 5. `05_export_mapping`  
 - C. Cuantificación de la expresión  
-  - 6. `6_fix_gtf`  
-  - 7. `7_quantification`  
-  - 8. `8_quantification_postprocessing.R`  
-  - 9. `9_fpkm_tpm.R`  
+  - 6. `06_fix_gtf`  
+  - 7. `07_quantification`  
+  - 8. `08_quantification_postprocessing.R`  
+  - 9. `09_fpkm_tpm.R`  
 - D. Ensamblaje de transcritos  
   - 10. `10_assembly`  
 - E. Análisis de expresión diferencial  
